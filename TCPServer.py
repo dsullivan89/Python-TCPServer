@@ -12,9 +12,12 @@
 import sys
 import string
 import threading
+import errno
 from socket import *
+from time import sleep
 
 class Server:
+	keepAlive = True
 	# Will accept a shutdown command from client
 	def init(self, hostname, port, max_clients):
 		self.server_address = (hostname, port)
@@ -28,9 +31,11 @@ class Server:
 		# If that's the case then remove self.initial_thread_count from the if statement
 		# on line 48
 		self.initial_thread_count = threading.activeCount()
+		self.connection.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+		self.connection.settimeout(3.0)
 		self.connection.bind(self.server_address)
 		self.connection.listen(1)
-		print '[Server] Listening on port {}.'.format(port)
+		print('[Server] Listening on port {}.'.format(port))
 	def send(self, client, addr):
 		no = True # python doesnt like empty function declarations. boo-wahh
 	def shutdown(self):
@@ -38,43 +43,72 @@ class Server:
 		# its time to clean up before leaving
 		self.connection.close()
 		self.connection = None
-		print '[Server] Shutdown Complete.'
+		print('[Server] Shutdown Complete.')
 	# This function will just accept new clients.
 	# Originally we planned for the main thread to send/recv but oh well :)
 	def run(self):
-		while True:
-			print('Waiting for a client')
-			newConnection, newAddress = self.connection.accept()
+		while Server.keepAlive:
 			# This is just elegant. one thread = one client so therefore
 			# our number of concurrent clients IS our thread count.
 			# We will give excess clients the boot as shown in the else statement
 			if threading.activeCount() - self.initial_thread_count < self.max_clients:
-				newThread = threading.Thread(target=self.client, name='Thread {} handling {}'.format(threading.activeCount()-1, newAddress), args=(newConnection, newAddress))
-				newThread.daemon = True
-				newThread.start()
+				try:
+					newConnection, newAddress = self.connection.accept()
+				except timeout as t:
+					sleep(1)
+					print('sleeping')
+				else:
+					newThread = threading.Thread(target=self.client, name='Thread {} handling {}'.format(threading.activeCount()-1, newAddress), args=(newConnection, newAddress))
+					newThread.daemon = True
+					newThread.start()
 			else:
-				newConnection.send("Server is full.\n".encode())
+				newConnection.send("Server is full.".encode())
 				newConnection.close()
 	def client(self, client_socket, client_address):
 		print('[Client {}] has connected.'.format(client_address))
-		# Send a friendly greeting
-		client_socket.send("Welcome!\n")
 		while True:
-			data = client_socket.recv(1024).decode()
+			data = self.receive_from(client_socket)
 			if not data: 
 				print('[Client {}] has disconnected.'.format(client_address))
 				break
-			elif data.decode() == "exit":	# exit condition is here, life is better that way.
-				client_socket.close()
+			elif "exit" in data:	# exit condition is here, life is better that way.
+				lock = threading.Lock()
+				lock.acquire()
+				try:
+					Server.keepAlive = False
+				finally:
+					lock.release()
 				break
 			else:
 				print('[Client {}]: {}'.format(client_address, data))
-				self.handle_client_input(client_socket, data)
+				# we now go to where we handle the data
+				if not self.input_handler(client_socket, data):
+					break
 		client_socket.close()
-	def handle_client_input(self, client_socket, data):
+		# we are going to use either a switch or if's
+		# and process the requests. We find out what
+		# we have here and send the response
+	def input_handler(self, client_socket, data):
 		if data:
 			message = data.upper()
-			client_socket.send(message.encode())
+			return self.send_to(client_socket, message)
+		else:
+			print('[Server] data was null')
+	def send_to(self, client_socket, data):
+		try:
+			client_socket.send(data.encode())
+			return True
+		except error as e:
+			print(e)
+			return False
+	def receive_from(self, client_socket):
+		try:
+			data = client_socket.recv(1024).decode()
+		except error as e:
+			print(e)
+			return None
+		else:
+			return data
 
 
 def main():
