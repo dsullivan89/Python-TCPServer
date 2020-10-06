@@ -56,7 +56,6 @@ class Server:
 					newConnection, newAddress = self.connection.accept()
 				except timeout as t:
 					sleep(1)
-					print('sleeping')
 				else:
 					newThread = threading.Thread(target=self.client, name='Thread {} handling {}'.format(threading.activeCount()-1, newAddress), args=(newConnection, newAddress))
 					newThread.daemon = True
@@ -71,7 +70,9 @@ class Server:
 			if not data: 
 				print('[Client {}] has disconnected.'.format(client_address))
 				break
-			elif "exit" in data:	# exit condition is here, life is better that way.
+			elif "auth_shutdown" in data:	# exit condition is here, life is better that way.
+				toClient = "Goodbye!"
+				self.send_to(client_socket, toClient)
 				lock = threading.Lock()
 				lock.acquire()
 				try:
