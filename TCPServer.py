@@ -127,7 +127,7 @@ def main():
 	#	connectionSocket.send(capitalizedSentence.encode())
 	#	connectionSocket.close() 
 	server = Server()
-	server.init("localhost", 5555, 2)
+	server.init("192.168.1.117", 5555, 2)
 	server.run()
 	server.shutdown()
 
