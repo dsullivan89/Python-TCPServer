@@ -25,6 +25,7 @@ class Server:
 		self.connection = socket(AF_INET, SOCK_STREAM)
 		self.isRunning = True
 		self.max_clients = max_clients
+		self.socket_username_dictionary = {}
 		# Under my settings there is more than 1 thread premade. perhaps on someone
 		# else's machine they will have an issue where they can't connect
 		# and they get a "server is full" message. 
@@ -57,20 +58,28 @@ class Server:
 				except timeout as t:
 					sleep(1)
 				else:
-					newThread = threading.Thread(target=self.client, name='Thread {} handling {}'.format(threading.activeCount()-1, newAddress), args=(newConnection, newAddress))
+					# creating a thread with a cool name
+					# and passing argument(s).
+					newThread = threading.Thread( 				\
+						target=self.client_main, 					\
+						name= 'Thread {} handling {}'.			\
+							format(threading.activeCount()-1, 	\
+							newAddress), args=\
+								(newConnection, newAddress))
 					newThread.daemon = True
 					newThread.start()
 			else:
 				newConnection.send("Server is full.".encode())
 				newConnection.close()
-	def client(self, client_socket, client_address):
-		print('[Client {}] has connected.'.format(client_address))
+	def client_main(self, client_socket, client_address):
+		self.client_init(client_socket, client_address)
 		while True:
 			data = self.receive_from(client_socket)
 			if not data: 
 				print('[Client {}] has disconnected.'.format(client_address))
 				break
-			elif "auth_shutdown" in data:	# exit condition is here, life is better that way.
+			# exit condition is here, life is better that way.
+			elif "auth_shutdown" in data:	
 				toClient = "Goodbye!"
 				self.send_to(client_socket, toClient)
 				lock = threading.Lock()
@@ -89,6 +98,17 @@ class Server:
 		# we are going to use either a switch or if's
 		# and process the requests. We find out what
 		# we have here and send the response
+	def client_init(self, client_socket, client_address):
+		# Greet the new client.
+		print('[Client {}] has connected.'.format(client_address))
+		fromClient = self.receive_from(client_socket)
+		
+		#ask for the client's name. don't be shy.
+		toClient = "req_username"
+		self.send_to(client_socket, toClient)
+		fromClient = self.receive_from(client_socket)
+		self.socket_username_dictionary[client_socket] = fromClient
+		print("User: {}".format(self.socket_username_dictionary[client_socket]))
 	def input_handler(self, client_socket, data):
 		if data:
 			message = data.upper()
