@@ -72,11 +72,15 @@ class Server:
 				newConnection.send("Server is full.".encode())
 				newConnection.close()
 	def client_main(self, client_socket, client_address):
+		# set up username
 		self.client_init(client_socket, client_address)
 		while True:
 			data = self.receive_from(client_socket)
 			if not data: 
-				print('[Client {}] has disconnected.'.format(client_address))
+				if self.user_name:
+					print('[{}] has disconnected.'.format(self.user_name))
+				else:
+					print('[Client {}] has disconnected.'.format(client_address))
 				break
 			# exit condition is here, life is better that way.
 			elif "auth_shutdown" in data:	
@@ -90,7 +94,6 @@ class Server:
 					lock.release()
 				break
 			else:
-				print('[Client {}]: {}'.format(client_address, data))
 				# we now go to where we handle the data
 				if not self.input_handler(client_socket, data):
 					break
@@ -101,20 +104,57 @@ class Server:
 	def client_init(self, client_socket, client_address):
 		# Greet the new client.
 		print('[Client {}] has connected.'.format(client_address))
-		fromClient = self.receive_from(client_socket)
-		
-		#ask for the client's name. don't be shy.
-		toClient = "req_username"
-		self.send_to(client_socket, toClient)
-		fromClient = self.receive_from(client_socket)
-		self.socket_username_dictionary[client_socket] = fromClient
-		print("User: {}".format(self.socket_username_dictionary[client_socket]))
-	def input_handler(self, client_socket, data):
-		if data:
-			message = data.upper()
-			return self.send_to(client_socket, message)
+		while True:
+			fromClient = self.receive_from(client_socket)
+			if "req_username" in fromClient:
+				user_name = fromClient.split(' ')[1].rstrip("\n")
+				if user_name in self.socket_username_dictionary:
+					self.send_to(client_socket, "ack_denied\n")
+				else:
+					self.socket_username_dictionary[client_socket] = user_name
+					self.send_to(client_socket, "ack_username\n")
+					self.user_name = user_name
+					print('[Client {}] is now {}.'.format(client_address, user_name))
+					break
+	# unused...
+	def get_username(self, client_socket, client_address):
+		name = ""
+		if client_socket in self.socket_username_dictionary:
+			name = self.socket_username_dictionary[client_socket]
+			return name
 		else:
-			print('[Server] data was null')
+			name = "Client {}".format(client_address)
+			return name
+	def input_handler(self, client_socket, data):
+		connected_clients = 0
+		lock = threading.Lock()
+		lock.acquire()
+		try:
+			connected_clients = len(self.socket_username_dictionary)
+		finally:
+			lock.release()
+		if connected_clients >= 2:
+			if self.user_name:
+				print('[{}]: {}'.format(self.user_name, data))
+			else:
+				print('[{}]: {}'.format(client_address, data))
+			message = data.upper()
+			self.send_to(client_socket, message)
+		else:
+			connected_clients = 0
+			while connected_clients < 2:
+				lock = threading.Lock()
+				lock.acquire()
+				try:
+					connected_clients = len(self.socket_username_dictionary)
+				finally:
+					lock.release()
+				self.send_to(client_socket, "keep_alive\n")
+				fromClient = self.receive_from(client_socket)
+				if not "keep_alive" in fromClient:
+					print("expected keep_alive.")
+					break
+			self.send_to(client_socket, "resume")
 	def send_to(self, client_socket, data):
 		try:
 			client_socket.send(data.encode())
