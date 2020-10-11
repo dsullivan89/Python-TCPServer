@@ -16,6 +16,29 @@ import errno
 from socket import *
 from time import sleep
 
+# avoid race conditions by giving each set of data its own wittle house.
+class Client:
+	def init(self, client_socket, client_address):
+		self.client_socket = client_socket
+		self.client_address = client_address
+		self.user_name = ""
+	def get_UserName():
+		while True:
+			fromClient = self.receive_from(client_socket)
+			if "req_username" in fromClient:
+				user_name = fromClient.split(' ')[1].rstrip("\n")
+				if user_name in self.socket_username_dictionary:
+					self.send_to(client_socket, "ack_denied\n")
+					print('[Client {}] picked an invalid username.'.format(client_address))
+				else:
+
+					self.socket_username_dictionary[client_socket] = user_name
+					self.send_to(client_socket, "ack_username\n")
+					self.user_name = user_name
+					print('[Client {}] is now {}.'.format(client_address, user_name))
+					break
+	
+
 class Server:
 	keepAlive = True
 	# Will accept a shutdown command from client
@@ -26,6 +49,7 @@ class Server:
 		self.isRunning = True
 		self.max_clients = max_clients
 		self.socket_username_dictionary = {}
+		self.socket_list = []
 		# Under my settings there is more than 1 thread premade. perhaps on someone
 		# else's machine they will have an issue where they can't connect
 		# and they get a "server is full" message. 
@@ -69,107 +93,118 @@ class Server:
 					newThread.daemon = True
 					newThread.start()
 			else:
-				newConnection.send("Server is full.".encode())
-				newConnection.close()
+				try:
+					newConnection, newAddress = self.connection.accept()
+					newConnection.send("Server is full.".encode())
+				except timeout as t:
+					sleep(1)
+				finally:
+					newConnection.close()
 	def client_main(self, client_socket, client_address):
 		# set up username
-		self.client_init(client_socket, client_address)
+		client_socket.settimeout(30.0)
+		user_name = "{}".format(client_address)
+		user_name_wrapper = [user_name]
+		self.client_init(client_socket, client_address, user_name_wrapper)
+		user_name = user_name_wrapper[0]
 		while True:
-			data = self.receive_from(client_socket)
-			if not data: 
-				if self.user_name:
-					print('[{}] has disconnected.'.format(self.user_name))
-				else:
-					print('[Client {}] has disconnected.'.format(client_address))
-				break
-			# exit condition is here, life is better that way.
-			elif "auth_shutdown" in data:	
-				toClient = "Goodbye!"
-				self.send_to(client_socket, toClient)
-				lock = threading.Lock()
-				lock.acquire()
-				try:
-					Server.keepAlive = False
-				finally:
-					lock.release()
-				break
-			else:
-				# we now go to where we handle the data
-				if not self.input_handler(client_socket, data):
-					break
+			if self.getClientCount() >= 2:
+				self.send_to(client_socket, "att_match_found\n")
+				data = self.receive_from(client_socket)
+				# exit condition is here, life is better that way.
+				if data:
+					if "auth_shutdown" in data:
+						toClient = "Goodbye!"
+						self.send_to(client_socket, toClient)
+						lock = threading.Lock()
+						lock.acquire()
+						try:
+							Server.keepAlive = False
+						finally:
+							lock.release()
+						break
+					else:
+						self.input_handler(client_socket, data, user_name)				
+		self.socket_list.remove(client_socket)
 		client_socket.close()
 		# we are going to use either a switch or if's
 		# and process the requests. We find out what
 		# we have here and send the response
-	def client_init(self, client_socket, client_address):
+	def client_init(self, client_socket, client_address, user_name):
 		# Greet the new client.
 		print('[Client {}] has connected.'.format(client_address))
 		while True:
 			fromClient = self.receive_from(client_socket)
 			if "req_username" in fromClient:
-				user_name = fromClient.split(' ')[1].rstrip("\n")
-				if user_name in self.socket_username_dictionary:
-					self.send_to(client_socket, "ack_denied\n")
-				else:
-					self.socket_username_dictionary[client_socket] = user_name
-					self.send_to(client_socket, "ack_username\n")
-					self.user_name = user_name
-					print('[Client {}] is now {}.'.format(client_address, user_name))
-					break
-	# unused...
-	def get_username(self, client_socket, client_address):
-		name = ""
-		if client_socket in self.socket_username_dictionary:
-			name = self.socket_username_dictionary[client_socket]
-			return name
-		else:
-			name = "Client {}".format(client_address)
-			return name
-	def input_handler(self, client_socket, data):
-		connected_clients = 0
-		lock = threading.Lock()
-		lock.acquire()
-		try:
-			connected_clients = len(self.socket_username_dictionary)
-		finally:
-			lock.release()
-		if connected_clients >= 2:
-			if self.user_name:
-				print('[{}]: {}'.format(self.user_name, data))
-			else:
-				print('[{}]: {}'.format(client_address, data))
-			message = data.upper()
-			self.send_to(client_socket, message)
-		else:
-			connected_clients = 0
-			while connected_clients < 2:
+				user_name[0] = fromClient.split(' ')[1]
 				lock = threading.Lock()
 				lock.acquire()
 				try:
-					connected_clients = len(self.socket_username_dictionary)
+					existingName = self.socket_username_dictionary.get(client_socket, None)
+					print(existingName)
+					# TODO
+					# This doesn't check for unique names! :(
+					if existingName != None:
+						self.send_to(client_socket, "req_denied\n")
+						print('[Client {}] picked an invalid username.'.format(client_address))
+					else:
+						self.socket_username_dictionary[client_socket] = user_name[0]
+						self.socket_list.append(client_socket)
+						print('[Client {}] is now {}.'.format(client_address, user_name[0]))
+						self.send_to(client_socket, "ack_username\n")
+						break
 				finally:
 					lock.release()
-				self.send_to(client_socket, "keep_alive\n")
-				fromClient = self.receive_from(client_socket)
-				if not "keep_alive" in fromClient:
-					print("expected keep_alive.")
-					break
-			self.send_to(client_socket, "resume")
+	# unused...
+	def get_username(self, client_socket, client_address):
+		name = ""
+		lock = threading.Lock()
+		lock.acquire()
+		try:
+			if client_socket in self.socket_username_dictionary:
+				name = self.socket_username_dictionary[client_socket]
+				return name
+			else:
+				name = "Client {}".format(client_address)
+				return name
+		finally:
+			lock.release()	
+	def getClientCount(self):
+		lock = threading.Lock()
+		lock.acquire()
+		try:
+			connected_clients = len(self.socket_list)
+		finally:
+			lock.release()
+			return connected_clients
+	def input_handler(self, client_socket, data, user_name):
+		print('[{}]: {}'.format(user_name, data))
+		message = data.upper()
+		self.send_to(client_socket, message)
 	def send_to(self, client_socket, data):
+		lock = threading.Lock()
+		lock.acquire()
 		try:
 			client_socket.send(data.encode())
 			return True
 		except error as e:
-			print(e)
+			#print(e)
+			# print("{}: Sending() has a race condition.".format(self.user_name))
 			return False
+		finally:
+			lock.release()
 	def receive_from(self, client_socket):
+		lock = threading.Lock()
+		lock.acquire()
 		try:
-			data = client_socket.recv(1024).decode()
-		except error as e:
-			print(e)
-			return None
-		else:
+			data = client_socket.recv(1024).decode().rstrip("\n")
 			return data
+		except error as e:
+			#print("Receive: {}".format(e))
+			# print("{}: Receiving has a race condition.".format(self.user_name))
+			return None
+		finally:
+			lock.release()
 
 
 def main():
