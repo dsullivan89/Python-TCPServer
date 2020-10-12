@@ -3,13 +3,15 @@ import threading
 
 class Server:
 	def init(self, host_name, port, max_clients):
-		self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		server_address = (host_name, port)
-		self.listen_socket.bind(server_address)
-		self.listen_socket.listen(max_clients)
+		self.server_address = (host_name, port)
+		self.max_clients = max_clients
 
 		self.socket_username_dictionary = {}
 		self.socket_list = []
+
+		self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.listen_socket.bind(server_address)
+		self.listen_socket.listen(max_clients)
 
 		print("Server listening on {}:{}".format(host_name, port))
 
