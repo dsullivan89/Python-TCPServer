@@ -38,8 +38,6 @@ class Client:
 					self.user_name = user_name
 					print('[Client {}] is now {}.'.format(client_address, user_name))
 					break
-	
-
 class Server:
 	keepAlive = True
 	# Will accept a shutdown command from client
@@ -51,6 +49,7 @@ class Server:
 		self.max_clients = max_clients
 		self.socket_username_dictionary = {}
 		self.socket_list = []
+		self.thread_list = []
 		# Under my settings there is more than 1 thread premade. perhaps on someone
 		# else's machine they will have an issue where they can't connect
 		# and they get a "server is full" message. 
@@ -60,7 +59,7 @@ class Server:
 		self.connection.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.connection.settimeout(3.0)
 		self.connection.bind(self.server_address)
-		self.connection.listen(1)
+		self.connection.listen(max_clients)
 		print('[Server] Listening on port {}.'.format(port))
 	def send(self, client, addr):
 		no = True # python doesnt like empty function declarations. boo-wahh
@@ -92,6 +91,7 @@ class Server:
 							newAddress), args=\
 								(newConnection, newAddress))
 					newThread.daemon = True
+					self.thread_list.append(newThread)
 					newThread.start()
 			else:
 				try:
@@ -101,6 +101,8 @@ class Server:
 					sleep(1)
 				finally:
 					newConnection.close()
+		for thread in self.thread_list:
+			thread.join()
 	def client_main(self, client_socket, client_address):
 		# set up username
 		# client_socket.settimeout(30.0)
@@ -112,25 +114,27 @@ class Server:
 		while True:
 			if self.getClientCount() >= 2:
 				if not matchFound:
+					print("Match found for: {}".format(user_name))
 					self.send_to(client_socket, "att_match_found\n")
 					matchFound = True
+				print("Waiting for data from: {}".format(user_name))
 				data = self.receive_from(client_socket)
 				# exit condition is here, life is better that way.
 				if data:
 					if "auth_shutdown" in data:
-						toClient = "Goodbye!"
-						self.send_to(client_socket, toClient)
+						# set run flag false
 						lock = threading.Lock()
 						lock.acquire()
 						try:
 							Server.keepAlive = False
 						finally:
 							lock.release()
+						# say bye
+						toClient = "Goodbye!"
+						self.send_to(client_socket, toClient)
 						break
 					else:
 						self.input_handler(client_socket, data, user_name)
-			else:
-				continue
 		self.send_to(client_socket, "Unexpected goodbye?")
 		self.socket_list.remove(client_socket)
 		client_socket.close()
@@ -184,9 +188,14 @@ class Server:
 			lock.release()
 			return connected_clients
 	def input_handler(self, client_socket, data, user_name):
-		print('[{}]: {}'.format(user_name, data))
-		message = data.upper()
-		self.send_to(client_socket, message)
+		lock = threading.Lock()
+		lock.acquire()
+		try:
+			print('[{}]: {}'.format(user_name, data))
+			message = data.upper()
+			self.send_to(client_socket, message)
+		finally:
+			lock.release()
 	def send_to(self, client_socket, data):
 		lock = threading.Lock()
 		lock.acquire()
