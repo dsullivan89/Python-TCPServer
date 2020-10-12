@@ -10,6 +10,7 @@
 # client is not made. I tested this using telnet.
 
 import sys
+import time
 import string
 import threading
 import errno
@@ -102,14 +103,17 @@ class Server:
 					newConnection.close()
 	def client_main(self, client_socket, client_address):
 		# set up username
-		client_socket.settimeout(30.0)
+		# client_socket.settimeout(30.0)
+		matchFound = False
 		user_name = "{}".format(client_address)
 		user_name_wrapper = [user_name]
 		self.client_init(client_socket, client_address, user_name_wrapper)
 		user_name = user_name_wrapper[0]
 		while True:
 			if self.getClientCount() >= 2:
-				self.send_to(client_socket, "att_match_found\n")
+				if not matchFound:
+					self.send_to(client_socket, "att_match_found\n")
+					matchFound = True
 				data = self.receive_from(client_socket)
 				# exit condition is here, life is better that way.
 				if data:
@@ -124,7 +128,10 @@ class Server:
 							lock.release()
 						break
 					else:
-						self.input_handler(client_socket, data, user_name)				
+						self.input_handler(client_socket, data, user_name)
+			else:
+				continue
+		self.send_to(client_socket, "Unexpected goodbye?")
 		self.socket_list.remove(client_socket)
 		client_socket.close()
 		# we are going to use either a switch or if's
@@ -141,7 +148,6 @@ class Server:
 				lock.acquire()
 				try:
 					existingName = self.socket_username_dictionary.get(client_socket, None)
-					print(existingName)
 					# TODO
 					# This doesn't check for unique names! :(
 					if existingName != None:
