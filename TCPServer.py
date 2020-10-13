@@ -76,16 +76,19 @@ class Server:
 					n1 = self.socket_username_dictionary[s1]
 					s2 = self.socket_list[1]
 					n2 = self.socket_username_dictionary[s2]
-					self.broadcast("Client X: {} received before Client Y: {}".format(n1,n2))
+					self.broadcast("Client X: {} received before Client Y: {}".format(n1,n2).encode())
 
-				# begin new client thread
-				thread = threading.Thread(target=self.client_main, 		   \
-						name='Thread {} handling {}'.format(threading.activeCount()-1, client_address), 
-						args= (client_socket,)) 				  \
+					for s in self.socket_list:
+						u = self.socket_username_dictionary[s]
+
+						# begin new client thread
+						thread = threading.Thread(target=self.client_main, 		   \
+								name='Thread {} handling {}'.format(threading.activeCount()-1, u), \
+								args= (s,)) 				  \
 				
-				self.thread_list.append(thread)
-				thread.daemon = True
-				thread.start()
+						self.thread_list.append(thread)
+						thread.daemon = True
+						thread.start()
 			else:
 				try:
 					client_socket, client_address = self.listen_socket.accept()
@@ -125,7 +128,7 @@ class Server:
 			else:
 				matchFound = False
 
-		client_socket.send("req_shutdown")
+		client_socket.send("req_shutdown".encode())
 		self.remove_client(client_socket)
 
 	def remove_client(self, client_socket):
