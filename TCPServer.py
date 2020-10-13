@@ -61,17 +61,19 @@ class Server:
 				except:
 					continue
 
-				client_socket.send("req_username".encode())
-				user_name = client_socket.recv(1024).decode()
-				self.socket_username_dictionary[client_socket] = user_name
 				self.socket_list.append(client_socket)
-
-				# broadcast nickname
-				print("{} is now {}".format(client_address, user_name))
-				self.broadcast("{} has joined.".format(user_name).encode())
-				# client_socket.send("Connected to server.".encode())
-
+				
 				if(len(self.socket_list) == 2):
+					
+					for c in self.socket_list:
+						c.send("req_username".encode())
+						name = c.recv(1024).decode()
+						self.socket_username_dictionary[c] = name
+
+						# broadcast nickname
+						print("{} is now {}".format(client_address, name))
+						self.broadcast("{} has joined.".format(name).encode())
+
 					s1 = self.socket_list[0]
 					n1 = self.socket_username_dictionary[s1]
 					s2 = self.socket_list[1]
