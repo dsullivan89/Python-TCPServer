@@ -71,6 +71,13 @@ class Server:
 				self.broadcast("{} has joined.".format(user_name).encode())
 				# client_socket.send("Connected to server.".encode())
 
+				if(len(self.socket_list) == 2):
+					s1 = self.socket_list[0]
+					n1 = self.socket_username_dictionary[s1]
+					s2 = self.socket_list[1]
+					n2 = self.socket_username_dictionary[s2]
+					self.broadcast("Client X: {} received before Client Y: {}".format(n1,n2))
+
 				# begin new client thread
 				thread = threading.Thread(target=self.client_main, 		   \
 						name='Thread {} handling {}'.format(threading.activeCount()-1, client_address), 
